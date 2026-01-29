@@ -1,3 +1,4 @@
+import os
 import discord
 from discord.ext import commands
 import datetime
@@ -151,5 +152,9 @@ async def admin(ctx):
     view.add_item(select)
     await ctx.send("Admin Panel:", view=view)
 
-# DO NOT ADD TOKEN HERE - use env variables on Render!
-# bot.run(os.getenv('TOKEN'))
+if __name__ == "__main__":
+    token = os.getenv('TOKEN')
+    if token:
+        bot.run(token)
+    else:
+        print("ERROR: No TOKEN found in environment variables!")
