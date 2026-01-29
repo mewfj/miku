@@ -1,4 +1,3 @@
-discord.py[voice]
-yt-dlp
-pynacl
+discord.py
 flask
+aiohttp
