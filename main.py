@@ -16,68 +16,98 @@ EMOJIS = {
     "info": "<:info:1466456677166612490>",
     "success": "<:success:1466456666890305688>",
     "yes": "<:yes:1466456663325282446>",
-    "miku_ping": "<:miku_ping:123456789012345678>" # Replace with your actual Miku emoji ID
+    "miku_ping": "<:miku_ping:1466456670522835046>>" # Replace with your Miku emoji ID
 }
 
 DEV_ID = 1081496970805399562
 INVITE_URL = "https://discord.com/oauth2/authorize?client_id=1279757277309435914&permissions=8&integration_type=0&scope=bot"
 
-# --- TRIPLE PREFIX LOGIC (+, miku, @Miku) ---
+# --- MULTI-PREFIX LOGIC (+, miku, @Miku) ---
 async def get_prefix(bot, message):
-    # This covers: +, miku , Miku , and tagging the bot
     prefixes = ['+', 'miku ', 'Miku ']
     return commands.when_mentioned_or(*prefixes)(bot, message)
 
 bot = commands.Bot(command_prefix=get_prefix, intents=discord.Intents.all(), help_command=None)
 
-# --- WEB SERVER FOR RENDER ---
+# --- OPTIMIZED WEB SERVER FOR CRONJOB ---
 app = Flask('')
+
 @app.route('/')
-def home(): return "Miku V2 is Online!"
-def run_web(): app.run(host='0.0.0.0', port=8080)
-def keep_alive(): Thread(target=run_web).start()
+def home():
+    return "Miku is Awake! <:yes:1466456663325282446>", 200
+
+def run_web():
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
+
+def keep_alive():
+    t = Thread(target=run_web)
+    t.daemon = True
+    t.start()
 
 # --- HELP UI (NORMAL TEXT + BUTTONS) ---
 class HelpView(discord.ui.View):
     @discord.ui.button(label="Moderation", emoji=EMOJIS['bankkick'], style=discord.ButtonStyle.danger)
     async def mod(self, interaction: discord.Interaction, button: discord.ui.Button):
-        text = (
-            "🛠 **Moderation Commands:**\n"
-            "`+ban` - Ban a user\n"
-            "`+kick` - Kick a user\n"
-            "`+mute` - Timeout a user (e.g. 10m, 1h)\n"
-            "`+unmute` - Remove timeout\n"
-            "`+role` - Toggle a role for a user\n"
-            "`+dm` - Message a user (Mods only)"
-        )
+        text = "🛠 **Moderation:** `+ban`, `+kick`, `+mute`, `+unmute`, `+role`, `+dm`"
         await interaction.response.send_message(text, ephemeral=True)
 
     @discord.ui.button(label="Anime Fun", emoji="✨", style=discord.ButtonStyle.success)
     async def fun(self, interaction: discord.Interaction, button: discord.ui.Button):
-        text = (
-            "🎬 **Anime Fun Gifs:**\n"
-            "`+slap`, `+kill`, `+tickle`, `+hug`, `+cuddle`, `+nod`, `+fuck`, `+beat`, `+sex`, `+kiss`"
-        )
+        text = "🎬 **Fun:** `+slap`, `+kill`, `+tickle`, `+hug`, `+cuddle`, `+nod`, `+fuck`, `+beat`, `+sex`, `+kiss`"
+        await interaction.response.send_message(text, ephemeral=True)
+
+    @discord.ui.button(label="Utility", emoji=EMOJIS['info'], style=discord.ButtonStyle.secondary)
+    async def util(self, interaction: discord.Interaction, button: discord.ui.Button):
+        text = "⚙️ **Utility:** `+userinfo`, `+serverinfo`, `+ping`, `+info`"
         await interaction.response.send_message(text, ephemeral=True)
 
 # --- EVENTS ---
 @bot.event
 async def on_message(message):
     if message.author.bot: return
-    
-    # Polite greeting when pinged
     if bot.user.mentioned_in(message) and len(message.content.strip().split()) == 1:
         view = discord.ui.View()
         view.add_item(discord.ui.Button(label="Add Me", url=INVITE_URL))
-        return await message.reply(
-            f"Hello! I'm Miku, a multifunctional bot! {EMOJIS['yes']}\n"
-            f"My prefixes are `+` and `miku `. How can I help you today?", 
-            view=view
-        )
-    
+        return await message.reply(f"Hello! I'm Miku, a multifunctional bot! {EMOJIS['yes']}\nMy prefixes are `+` and `miku `. How can I help you today?", view=view)
     await bot.process_commands(message)
 
-# --- MODERATION COMMANDS ---
+# --- UTILITY COMMANDS (NEW) ---
+@bot.command()
+async def userinfo(ctx, member: discord.Member = None):
+    member = member or ctx.author
+    roles = [role.mention for role in member.roles[1:]] # Exclude @everyone
+    
+    text = (
+        f"👤 **User Info for {member.name}**\n"
+        f"**ID:** {member.id}\n"
+        f"**Joined Discord:** {member.created_at.strftime('%Y-%m-%d')}\n"
+        f"**Joined Server:** {member.joined_at.strftime('%Y-%m-%d') if member.joined_at else 'N/A'}\n"
+        f"**Roles:** {', '.join(roles) if roles else 'None'}\n"
+        f"**Top Role:** {member.top_role.mention}"
+    )
+    await ctx.send(text)
+
+@bot.command()
+async def serverinfo(ctx):
+    guild = ctx.guild
+    text = (
+        f"🏰 **Server Info: {guild.name}**\n"
+        f"**Owner:** {guild.owner}\n"
+        f"**ID:** {guild.id}\n"
+        f"**Created At:** {guild.created_at.strftime('%Y-%m-%d')}\n"
+        f"**Total Members:** {guild.member_count}\n"
+        f"**Channels:** {len(guild.channels)} ({len(guild.text_channels)} text / {len(guild.voice_channels)} voice)\n"
+        f"**Roles:** {len(guild.roles)}"
+    )
+    await ctx.send(text)
+
+@bot.command()
+async def ping(ctx):
+    latency = random.randint(983, 1234)
+    await ctx.send(f"{EMOJIS['miku_ping']} Pong! Latency: **{latency}ms**")
+
+# --- MODERATION ---
 @bot.command()
 @commands.has_permissions(ban_members=True)
 async def ban(ctx, member: discord.Member, *, reason="No reason provided"):
@@ -96,12 +126,11 @@ async def mute(ctx, member: discord.Member, time: str, *, reason="No reason prov
     try:
         unit = time[-1].lower()
         amount = int(time[:-1])
-        # Convert all to seconds for timedelta
         seconds = amount * {'s': 1, 'm': 60, 'h': 3600, 'd': 86400}.get(unit, 60)
         await member.timeout(datetime.timedelta(seconds=seconds), reason=reason)
         await ctx.send(f"{EMOJIS['success']} Muted **{member.name}** for {time}.")
     except:
-        await ctx.send("Invalid format! Use: `10s`, `5m`, `2h`, or `1d`.")
+        await ctx.send("Use format: `23s`, `5m`, `2h`, `1d`!")
 
 @bot.command()
 @commands.has_permissions(moderate_members=True)
@@ -114,65 +143,53 @@ async def unmute(ctx, member: discord.Member):
 async def role(ctx, member: discord.Member, role: discord.Role):
     if role in member.roles:
         await member.remove_roles(role)
-        await ctx.send(f"{EMOJIS['settings']} Removed **{role.name}** from {member.name}.")
+        await ctx.send(f"{EMOJIS['settings']} Removed {role.name} from {member.name}.")
     else:
         await member.add_roles(role)
-        await ctx.send(f"{EMOJIS['success']} Added **{role.name}** to {member.name}.")
+        await ctx.send(f"{EMOJIS['success']} Added {role.name} to {member.name}.")
 
 @bot.command()
 async def dm(ctx, member: discord.Member, *, message):
     if not ctx.author.guild_permissions.manage_messages: return
-    try:
-        await member.send(f"**Message from {ctx.guild.name} staff:** {message}")
-        await ctx.send(f"{EMOJIS['success']} DM sent to {member.name}.")
-    except:
-        await ctx.send("I couldn't DM that user (DMs might be closed).")
+    await member.send(f"**Message from Staff:** {message}")
+    await ctx.send(f"{EMOJIS['success']} DM sent to {member.name}.")
 
-# --- ANIME FUN COMMANDS ---
-async def send_anime_gif(ctx, category, member: discord.Member = None):
+# --- ANIME FUN ---
+async def send_gif(ctx, category, member: discord.Member = None):
     async with aiohttp.ClientSession() as session:
         async with session.get(f"https://api.otakugifs.xyz/gif?reaction={category}") as r:
-            if r.status == 200:
-                data = await r.json()
-                url = data['url']
-                text = f"**{ctx.author.name}** {category}s **{member.name}**!" if member else f"**{ctx.author.name}** is {category}ing!"
-                await ctx.send(f"{text}\n{url}")
-            else:
-                await ctx.send("Couldn't find a GIF right now!")
+            data = await r.json()
+            url = data['url']
+    text = f"**{ctx.author.name}** {category}s **{member.name}**!" if member else f"**{ctx.author.name}** is {category}ing!"
+    await ctx.send(f"{text}\n{url}")
 
 @bot.command()
-async def slap(ctx, m: discord.Member = None): await send_anime_gif(ctx, "slap", m)
+async def slap(ctx, m: discord.Member = None): await send_gif(ctx, "slap", m)
 @bot.command()
-async def kill(ctx, m: discord.Member = None): await send_anime_gif(ctx, "kill", m)
+async def kill(ctx, m: discord.Member = None): await send_gif(ctx, "kill", m)
 @bot.command()
-async def tickle(ctx, m: discord.Member = None): await send_anime_gif(ctx, "tickle", m)
+async def tickle(ctx, m: discord.Member = None): await send_gif(ctx, "tickle", m)
 @bot.command()
-async def hug(ctx, m: discord.Member = None): await send_anime_gif(ctx, "hug", m)
+async def hug(ctx, m: discord.Member = None): await send_gif(ctx, "hug", m)
 @bot.command()
-async def cuddle(ctx, m: discord.Member = None): await send_anime_gif(ctx, "cuddle", m)
+async def cuddle(ctx, m: discord.Member = None): await send_gif(ctx, "cuddle", m)
 @bot.command()
-async def nod(ctx, m: discord.Member = None): await send_anime_gif(ctx, "nod", m)
+async def nod(ctx, m: discord.Member = None): await send_gif(ctx, "nod", m)
 @bot.command()
-async def fuck(ctx, m: discord.Member = None): await send_anime_gif(ctx, "fuck", m)
+async def fuck(ctx, m: discord.Member = None): await send_gif(ctx, "fuck", m)
 @bot.command()
-async def beat(ctx, m: discord.Member = None): await send_anime_gif(ctx, "beat", m)
+async def beat(ctx, m: discord.Member = None): await send_gif(ctx, "beat", m)
 @bot.command()
-async def sex(ctx, m: discord.Member = None): await send_anime_gif(ctx, "sex", m)
+async def sex(ctx, m: discord.Member = None): await send_gif(ctx, "sex", m)
 @bot.command()
-async def kiss(ctx, m: discord.Member = None): await send_anime_gif(ctx, "kiss", m)
+async def kiss(ctx, m: discord.Member = None): await send_gif(ctx, "kiss", m)
 
-# --- UTILITY ---
-@bot.command()
-async def ping(ctx):
-    latency = random.randint(983, 1234)
-    await ctx.send(f"{EMOJIS['miku_ping']} Pong! Latency: **{latency}ms**")
-
+# --- INFO & HELP ---
 @bot.command()
 async def info(ctx):
     view = discord.ui.View()
     view.add_item(discord.ui.Button(label="Report/Feedback", url="https://discord.gg/zCfBYyR5U6"))
     view.add_item(discord.ui.Button(label="Add Me", url=INVITE_URL))
-    
     text = (
         f"🌸 **Bot Name:** Miku\n"
         f"📜 **Language:** Python\n"
@@ -184,9 +201,9 @@ async def info(ctx):
 
 @bot.command()
 async def help(ctx):
-    await ctx.send(f"{EMOJIS['help']} **Miku Help Menu**\nSelect a category below to see my commands!", view=HelpView())
+    await ctx.send(f"{EMOJIS['help']} **Miku Help Menu**\nSelect a category below:", view=HelpView())
 
-# --- DEV TOOLS ---
+# --- DEV ONLY ---
 @bot.command()
 async def stats(ctx):
     if ctx.author.id != DEV_ID: return
@@ -198,4 +215,4 @@ if __name__ == "__main__":
     if token:
         bot.run(token)
     else:
-        print("Missing TOKEN in Environment Variables!")
+        print("Missing TOKEN!")
