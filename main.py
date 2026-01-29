@@ -7,7 +7,7 @@ import yt_dlp
 from flask import Flask
 from threading import Thread
 
-# --- EMOJI DICTIONARY ---
+# --- EMOJIS ---
 EMOJIS = {
     "musicplay": "<:musicplay:1466456872163737620>",
     "bankkick": "<:bankkick:1466456864194560315>",
@@ -21,151 +21,142 @@ EMOJIS = {
 }
 
 DEV_ID = 1081496970805399562
-intents = discord.Intents.all()
-bot = commands.Bot(command_prefix='+', intents=intents, help_command=None)
+bot = commands.Bot(command_prefix='+', intents=discord.Intents.all(), help_command=None)
 
-# --- WEB SERVER FOR RENDER ---
+# --- WEB SERVER ---
 app = Flask('')
 @app.route('/')
-def home(): return "Miku is online!"
-
+def home(): return "Miku V2 is Online!"
 def run(): app.run(host='0.0.0.0', port=8080)
 def keep_alive(): Thread(target=run).start()
 
-# --- MUSIC CONFIG ---
-YDL_OPTIONS = {'format': 'bestaudio/best', 'noplaylist': 'True', 'quiet': True}
-FFMPEG_OPTIONS = {
-    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-    'options': '-vn'
-}
+# --- MUSIC SETUP ---
+FFMPEG_OPTIONS = {'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5', 'options': '-vn'}
+YDL_OPTIONS = {'format': 'bestaudio/best', 'noplaylist': True, 'quiet': True}
 queues = {}
 
-# --- HELP COMMAND ---
+# --- UI COMPONENTS (HELP CMD) ---
+class HelpRow(discord.ui.View):
+    def __init__(self):
+        super().__init__()
+    
+    @discord.ui.button(label="Music", emoji=EMOJIS['music'], style=discord.ButtonStyle.blurple)
+    async def music_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("🎵 **Music:** `+p`, `+s`, `+skip`, `+queue`", ephemeral=True)
+
+    @discord.ui.button(label="Mod", emoji=EMOJIS['bankkick'], style=discord.ButtonStyle.danger)
+    async def mod_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("🛠 **Mod:** `+ban`, `+kick`, `+mute`, `+unmute`, `+role`, `+dm`", ephemeral=True)
+
+# --- COMMANDS ---
+
 @bot.command()
 async def help(ctx):
-    embed = discord.Embed(title=f"{EMOJIS['help']} Miku Bot Help", color=0x00ffff)
-    embed.add_field(name="🎵 Music", value="`+play / +p`, `+stop / +s`, `+skip`, `+queue` (Anime style!)", inline=False)
-    embed.add_field(name="🛠 Moderation", value="`+ban`, `+kick`, `+mute`, `+unmute`, `+role`, `+dm` (Mod only)", inline=False)
-    embed.add_field(name="ℹ️ Info", value="`+info`, `+stats` (Dev), `+admin` (Dev)", inline=False)
-    await ctx.send(embed=embed)
+    # Help in a row-type message with emojis
+    msg = f"{EMOJIS['help']} **Miku Help Menu**\nClick the buttons below for commands!"
+    await ctx.send(msg, view=HelpRow())
 
-# --- MUSIC COMMANDS ---
 @bot.command(aliases=['p'])
 async def play(ctx, *, search):
-    if not ctx.author.voice:
-        return await ctx.send(f"{EMOJIS['settings']} Join a Voice Channel first!")
-
-    if ctx.guild.id not in queues: queues[ctx.guild.id] = []
+    if not ctx.author.voice: return await ctx.send(f"{EMOJIS['settings']} Join VC!")
+    
+    # Ensure audio library is loaded
+    if not discord.opus.is_loaded():
+        try: discord.opus.load_opus('libopus.so.0')
+        except: pass
 
     if ctx.voice_client and ctx.voice_client.is_playing():
-        queues[ctx.guild.id].append(search)
-        return await ctx.send(f"{EMOJIS['musicplay']} Music added to queue! {EMOJIS['dancing']}")
+        await ctx.send(f"{EMOJIS['musicplay']} Added to queue! {EMOJIS['dancing']}")
+        return queues.setdefault(ctx.guild.id, []).append(search)
 
     vc = ctx.voice_client or await ctx.author.voice.channel.connect()
     
-    with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
-        info = ydl.extract_info(f"ytsearch:{search}", download=False)['entries'][0]
-        url = info['url']
-        title = info['title']
-    
-    vc.play(discord.FFmpegPCMAudio(url, **FFMPEG_OPTIONS))
-    await ctx.send(f"{EMOJIS['music']} Playing: **{title}** {EMOJIS['yes']}")
+    async with ctx.typing():
+        with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
+            info = ydl.extract_info(f"ytsearch:{search}", download=False)['entries'][0]
+            url = info['url']
+        
+        # Audio playback with FFmpeg
+        vc.play(discord.FFmpegPCMAudio(url, **FFMPEG_OPTIONS))
+        await ctx.send(f"{EMOJIS['music']} **Playing:** {info['title']} {EMOJIS['yes']}")
 
 @bot.command(aliases=['s'])
 async def stop(ctx):
     if ctx.voice_client:
         await ctx.voice_client.disconnect()
-        await ctx.send(f"{EMOJIS['success']} Stopped and left VC.")
+        await ctx.send(f"{EMOJIS['success']} Disconnected.")
 
 @bot.command()
 async def skip(ctx):
     if ctx.voice_client and ctx.voice_client.is_playing():
         ctx.voice_client.stop()
-        await ctx.send(f"{EMOJIS['musicplay']} Skipped!")
+        await ctx.send(f"{EMOJIS['musicplay']} Track skipped.")
 
 @bot.command()
 async def queue(ctx):
-    q_list = queues.get(ctx.guild.id, [])
-    if not q_list: return await ctx.send(f"{EMOJIS['music']} Queue is empty.")
-    await ctx.send(f"{EMOJIS['help']} **Next in Queue:**\n" + "\n".join(q_list))
+    q = queues.get(ctx.guild.id, [])
+    await ctx.send(f"{EMOJIS['music']} Queue: " + (", ".join(q) if q else "Empty"))
 
-# --- MODERATION COMMANDS ---
 @bot.command()
 @commands.has_permissions(ban_members=True)
-async def ban(ctx, member: discord.Member, *, reason="None"):
+async def ban(ctx, member: discord.Member, *, reason=None):
     await member.ban(reason=reason)
-    await ctx.send(f"{EMOJIS['bankkick']} Banned {member.mention}")
+    await ctx.send(f"{EMOJIS['bankkick']} Banned {member.name}")
 
 @bot.command()
 @commands.has_permissions(kick_members=True)
-async def kick(ctx, member: discord.Member, *, reason="None"):
+async def kick(ctx, member: discord.Member, *, reason=None):
     await member.kick(reason=reason)
-    await ctx.send(f"{EMOJIS['bankkick']} Kicked {member.mention}")
+    await ctx.send(f"{EMOJIS['bankkick']} Kicked {member.name}")
 
 @bot.command()
 @commands.has_permissions(moderate_members=True)
-async def mute(ctx, member: discord.Member, time: str, *, reason="None"):
-    seconds = 0
-    t = time.lower()
-    if 's' in t: seconds = int(t.replace('s',''))
-    elif 'm' in t: seconds = int(t.replace('m','')) * 60
-    elif 'hrs' in t: seconds = int(t.replace('hrs','')) * 3600
-    elif 'd' in t: seconds = int(t.replace('d','')) * 86400
-    await member.timeout(datetime.timedelta(seconds=seconds), reason=reason)
-    await ctx.send(f"{EMOJIS['success']} Muted {member.mention} for {time}.")
+async def mute(ctx, member: discord.Member, time: str, *, reason=None):
+    s = int(time[:-1]) * {'s':1, 'm':60, 'h':3600, 'd':86400}[time[-1]]
+    await member.timeout(datetime.timedelta(seconds=s), reason=reason)
+    await ctx.send(f"{EMOJIS['success']} Muted {member.name} for {time}")
 
 @bot.command()
-@commands.has_permissions(moderate_members=True)
 async def unmute(ctx, member: discord.Member):
     await member.timeout(None)
-    await ctx.send(f"{EMOJIS['yes']} Unmuted {member.mention}.")
+    await ctx.send(f"{EMOJIS['yes']} Unmuted {member.name}")
 
 @bot.command()
-@commands.has_permissions(manage_roles=True)
 async def role(ctx, member: discord.Member, role: discord.Role):
     if role in member.roles: await member.remove_roles(role)
     else: await member.add_roles(role)
-    await ctx.send(f"{EMOJIS['settings']} Toggled role {role.name} for {member.name}")
+    await ctx.send(f"{EMOJIS['settings']} Toggled role: {role.name}")
 
 @bot.command()
 async def dm(ctx, member: discord.Member, *, text):
-    if not ctx.author.guild_permissions.manage_messages: return
-    await member.send(f"Admin Message: {text}")
-    await ctx.send(f"{EMOJIS['success']} DM sent.")
+    if ctx.author.guild_permissions.manage_messages:
+        await member.send(f"Admin: {text}")
+        await ctx.send(f"{EMOJIS['success']} DM Sent.")
 
-# --- INFO & ADMIN ---
 @bot.command()
 async def info(ctx):
     view = discord.ui.View()
-    view.add_item(discord.ui.Button(label="Report/Rate", url="https://discord.gg/zCfBYyR5U6"))
-    embed = discord.Embed(title=f"{EMOJIS['info']} Miku Info", color=0x00ffff)
-    embed.add_field(name="Dev", value="NebulaVex (4v3h)")
-    await ctx.send(embed=embed, view=view)
+    view.add_item(discord.ui.Button(label="Report/Rate", url="https://discord.gg/zCfBYyR5U6", style=discord.ButtonStyle.link))
+    await ctx.send(f"{EMOJIS['info']} **Dev:** NebulaVex (4v3h)\n**Server:** https://discord.gg/zCfBYyR5U6", view=view)
 
 @bot.command()
 async def stats(ctx):
-    if ctx.author.id != DEV_ID: return
-    await ctx.send(f"Servers: {len(bot.guilds)} | Users: {sum(g.member_count for g in bot.guilds)}")
+    if ctx.author.id == DEV_ID:
+        await ctx.send(f"Servers: {len(bot.guilds)} | Users: {sum(g.member_count for g in bot.guilds)}")
 
 @bot.command()
 async def admin(ctx):
     if ctx.author.id != DEV_ID: return
     options = [discord.SelectOption(label=g.name, value=str(g.id)) for g in bot.guilds[:25]]
-    select = discord.ui.Select(placeholder="Leave a server", options=options)
-    async def cb(interaction):
-        if interaction.user.id != DEV_ID: return
-        g = bot.get_guild(int(select.values[0]))
-        await g.leave()
-        await interaction.response.send_message(f"Left {g.name}")
+    select = discord.ui.Select(placeholder="Select server to leave", options=options)
+    async def cb(i):
+        if i.user.id == DEV_ID:
+            await bot.get_guild(int(select.values[0])).leave()
+            await i.response.send_message("Left.")
     select.callback = cb
     view = discord.ui.View(); view.add_item(select)
     await ctx.send("Admin Panel:", view=view)
 
-# --- RUN ---
 if __name__ == "__main__":
-    token = os.getenv('TOKEN')
-    if token:
-        keep_alive()
-        bot.run(token)
-    else:
-        print("Set the TOKEN variable in Render dashboard!")
+    keep_alive()
+    bot.run(os.getenv('TOKEN'))
