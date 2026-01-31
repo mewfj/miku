@@ -55,12 +55,12 @@ async def daily_reminder():
         if channel:
             await channel.send("🌸 **Ohayo Gozaimasu!** It's time to check your `daily` and play the Miku game! ✨")
 
-# --- GAME LOGIC ---
+# --- GAME COMMANDS ---
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def start_egame(ctx):
     data = load_data()
-    data["guilds"][str(ctx.guild.id)] = ctx.channel.id # Save channel for morning msgs
+    data["guilds"][str(ctx.guild.id)] = ctx.channel.id 
     for m in ctx.guild.members:
         if not m.bot:
             uid = str(m.id)
@@ -104,14 +104,13 @@ async def leaderboard(ctx):
     data = load_data()
     server_ids = [m.id for m in ctx.guild.members if not m.bot]
     lb = sorted([(u, b) for u, b in data["users"].items() if int(u) in server_ids], key=lambda x: x[1], reverse=True)
-    
-    # Using Embed for Silent Mentions (Zero ping)
     embed = discord.Embed(title=f"🏆 {ctx.guild.name} Leaderboard", color=0x00ffff)
+    desc = ""
     for i, (u, b) in enumerate(lb[:5], 1):
         rank = "🥇" if i==1 else "🥈" if i==2 else "🥉" if i==3 else f"#{i}"
-        embed.description = embed.description or ""
-        embed.description += f"{rank} <@{u}>: **{b}**\n"
-    await ctx.send(embed=embed) # Embed mentions are silent/no-ping by default
+        desc += f"{rank} <@{u}>: **{b}**\n"
+    embed.description = desc
+    await ctx.send(embed=embed)
 
 # --- ANIME FUN ---
 FUN_LIST = ['slap', 'kill', 'tickle', 'hug', 'cuddle', 'nod', 'fuck', 'beat', 'sex', 'kiss', 'wave', 'hi', 'bye', 'welcome', 'thank', 'thanks', 'pat', 'poke', 'boop', 'highfive', 'handshake', 'holdhands', 'snuggle', 'nuzzle', 'comfort', 'bonk', 'yeet', 'throw', 'bite', 'lick', 'spank', 'roast', 'explode', 'prank', 'confuse', 'tease', 'bully', 'scare', 'trap', 'shoot', 'smack', 'blush', 'cry', 'laugh', 'dance', 'sing', 'sleep', 'wake', 'facepalm', 'think', 'stare', 'smile', 'happy', 'sad', 'angry', 'excited', 'clap']
@@ -119,7 +118,7 @@ FUN_LIST = ['slap', 'kill', 'tickle', 'hug', 'cuddle', 'nod', 'fuck', 'beat', 's
 async def anime_gif(ctx, action, member: discord.Member = None):
     async with aiohttp.ClientSession() as s:
         async with s.get(f"https://api.otakugifs.xyz/gif?reaction={action}") as r:
-            url = (await r.json())['url']
+            data = await r.json(); url = data['url']
     txt = f"**{ctx.author.mention}** {action}ing **{member.mention}**!" if member else f"**{ctx.author.mention}** is {action}ing!"
     await ctx.send(f"{txt}\n{url}")
 
@@ -128,7 +127,7 @@ for f in FUN_LIST:
         @bot.command(name=f)
         async def _f(ctx, m: discord.Member = None, name=f): await anime_gif(ctx, name, m)
 
-# --- MODERATION (Unchanged) ---
+# --- MODERATION ---
 @bot.command()
 @commands.has_permissions(ban_members=True)
 async def ban(ctx, m: discord.Member, *, r="None"):
@@ -139,7 +138,7 @@ async def ban(ctx, m: discord.Member, *, r="None"):
 async def kick(ctx, m: discord.Member, *, r="None"):
     await m.kick(reason=r); await ctx.send(f"{EMOJIS['bankkick']} Kicked **{m.name}**")
 
-# --- DEV ONLY SECRET TOOLS ---
+# --- DEV TOOLS ---
 @bot.command(hidden=True)
 async def adh(ctx):
     if ctx.author.id != DEV_ID: return
@@ -165,15 +164,12 @@ async def stats(ctx):
 # --- UI & HELP ---
 @bot.command()
 async def help(ctx):
-    v = discord.ui.View()
-    v.add_item(discord.ui.Button(label="Add Me", url=INVITE_URL))
-    
+    v = discord.ui.View(); v.add_item(discord.ui.Button(label="Add Me", url=INVITE_URL))
     text = (
         f"🌸 **Miku Help Menu**\n"
         f"🛠 **Mod:** `ban`, `kick`, `mute`, `unmute`, `role`, `dm`\n"
         f"🎮 **Game:** `start_egame`, `daily`, `weekly`, `give`, `lb`, `cf`, `rob`, `pray`\n"
-        f"⚙️ **Util:** `info`, `userinfo`, `serverinfo`, `ping`\n"
-        f"✨ **Fun:** `{', '.join(FUN_LIST[:8])}...`"
+        f"✨ **Fun:** `{', '.join(FUN_LIST[:10])}...`"
     )
     await ctx.send(text, view=v)
 
@@ -187,12 +183,16 @@ async def on_message(msg):
 
 @bot.event
 async def on_ready():
-    status_updater.start(); daily_reminder.start()
+    if not status_updater.is_running(): status_updater.start()
+    if not daily_reminder.is_running(): daily_reminder.start()
     print("Miku Ready!")
 
-# --- FLASK ---
-app = Flask(''); @app.route('/')
-def home(): return "Miku Ultimate Online!", 200
+# --- WEB SERVER (FIXED SYNTAX) ---
+app = Flask('')
+
+@app.route('/')
+def home_route():
+    return "Miku Ultimate Online!", 200
 
 if __name__ == "__main__":
     Thread(target=lambda: app.run(host='0.0.0.0', port=os.getenv("PORT", 8080)), daemon=True).start()
