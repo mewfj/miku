@@ -36,108 +36,64 @@ def load_data():
 def save_data(data):
     with open('data.json', 'w') as f: json.dump(data, f, indent=4)
 
-# --- PAGINATED LEADERBOARD ---
-class LeaderboardView(discord.ui.View):
-    def __init__(self, lb_data, page=0):
-        super().__init__(timeout=60)
-        self.lb_data, self.page = lb_data, page
-
-    async def update_lb(self, interaction):
-        start, end = self.page * 5, (self.page * 5) + 5
-        msg = f"🏆 **Miku Leaderboard (Page {self.page + 1})**\n"
-        for i, (uid, bal) in enumerate(self.lb_data[start:end], start + 1):
-            rank = "🥇" if i==1 else "🥈" if i==2 else "🥉" if i==3 else f"#{i}"
-            msg += f"{rank} <@{uid}>: **{bal} points**\n"
-        await interaction.response.edit_message(content=msg, view=self)
-
-    @discord.ui.button(label="Prev", style=discord.ButtonStyle.gray)
-    async def prev(self, i, b):
-        if self.page > 0: self.page -= 1; await self.update_lb(i)
-
-    @discord.ui.button(label="Next", style=discord.ButtonStyle.gray)
-    async def next(self, i, b):
-        if (self.page + 1) * 5 < len(self.lb_data): self.page += 1; await self.update_lb(i)
-
 # --- 8 AM TASK ---
 @tasks.loop(time=datetime.time(hour=8, minute=0))
 async def daily_reminder():
     for guild in bot.guilds:
         channel = guild.system_channel or next((c for c in guild.text_channels if c.permissions_for(guild.me).send_messages), None)
-        if channel: await channel.send("🌸 **Good morning!** Time to play the Miku game! Try `miku daily`!")
+        if channel:
+            try: await channel.send("🌸 **Good morning!** Time to play the Miku game! Try `miku daily`!")
+            except: continue
+
+# --- WEB SERVER ---
+app = Flask('')
+@app.route('/')
+def home_route(): return "Miku V7 Online!", 200
+
+def run_web():
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
+
+# --- ANIME FUN ENGINE ---
+FUN_LIST = ['slap', 'kill', 'tickle', 'hug', 'cuddle', 'nod', 'fuck', 'beat', 'sex', 'kiss', 'wave', 'hi', 'bye', 'welcome', 'thank', 'thanks', 'pat', 'poke', 'boop', 'highfive', 'handshake', 'holdhands', 'snuggle', 'nuzzle', 'comfort', 'bonk', 'yeet', 'throw', 'bite', 'lick', 'spank', 'roast', 'explode', 'prank', 'confuse', 'tease', 'bully', 'scare', 'trap', 'shoot', 'smack', 'blush', 'cry', 'laugh', 'dance', 'sing', 'sleep', 'wake', 'facepalm', 'think', 'stare', 'smile', 'happy', 'sad', 'angry', 'excited', 'clap']
+
+async def anime_gif(ctx, action, member: discord.Member = None):
+    async with aiohttp.ClientSession() as s:
+        async with s.get(f"https://api.otakugifs.xyz/gif?reaction={action}") as r:
+            data = await r.json()
+            url = data['url']
+    msg = f"{ctx.author.mention} {action}s {member.mention}!" if member else f"{ctx.author.mention} is {action}ing!"
+    await ctx.send(f"{msg}\n{url}")
+
+for f in FUN_LIST:
+    if not bot.get_command(f):
+        @bot.command(name=f)
+        async def _f(ctx, m: discord.Member = None, name=f): await anime_gif(ctx, name, m)
 
 # --- MODERATION ---
 @bot.command()
 @commands.has_permissions(ban_members=True)
 async def ban(ctx, member: discord.Member, *, reason="No reason provided"):
-    await member.ban(reason=reason)
-    await ctx.send(f"{EMOJIS['bankkick']} Banned **{member.name}** | Reason: {reason}")
+    await member.ban(reason=reason); await ctx.send(f"{EMOJIS['bankkick']} Banned **{member.name}**")
 
 @bot.command()
 @commands.has_permissions(kick_members=True)
 async def kick(ctx, member: discord.Member, *, reason="No reason provided"):
-    await member.kick(reason=reason)
-    await ctx.send(f"{EMOJIS['bankkick']} Kicked **{member.name}** | Reason: {reason}")
+    await member.kick(reason=reason); await ctx.send(f"{EMOJIS['bankkick']} Kicked **{member.name}**")
 
 @bot.command()
 @commands.has_permissions(moderate_members=True)
-async def mute(ctx, member: discord.Member, time: str, *, reason="No reason provided"):
-    try:
-        seconds = int(time[:-1]) * {'s':1,'m':60,'h':3600,'d':86400}[time[-1].lower()]
-        await member.timeout(datetime.timedelta(seconds=seconds), reason=reason)
-        await ctx.send(f"{EMOJIS['success']} Muted {member.name} for {time}.")
-    except: await ctx.send("Format: `10m`, `1h`, `1d`!")
-
-@bot.command()
-async def unmute(ctx, member: discord.Member):
-    await member.timeout(None); await ctx.send(f"{EMOJIS['yes']} Unmuted {member.name}.")
-
-@bot.command()
-@commands.has_permissions(manage_roles=True)
-async def role(ctx, member: discord.Member, role: discord.Role):
-    if role in member.roles: await member.remove_roles(role); await ctx.send(f"Removed {role.name}")
-    else: await member.add_roles(role); await ctx.send(f"Added {role.name}")
-
-@bot.command()
-async def dm(ctx, member: discord.Member, *, message):
-    if ctx.author.guild_permissions.manage_messages:
-        await member.send(f"**Staff Msg:** {message}"); await ctx.send(f"DM Sent.")
-
-# --- UTILITY ---
-@bot.command()
-async def userinfo(ctx, m: discord.Member = None):
-    m = m or ctx.author
-    await ctx.send(f"👤 **{m.name}**\n**ID:** {m.id}\n**Joined:** {m.created_at.strftime('%Y-%m-%d')}")
-
-@bot.command()
-async def serverinfo(ctx):
-    g = ctx.guild
-    await ctx.send(f"🏰 **{g.name}**\n**Owner:** {g.owner}\n**Members:** {g.member_count}")
-
-@bot.command()
-async def ping(ctx):
-    await ctx.send(f"{EMOJIS['dancing']} Pong! Latency: **{random.randint(983, 1234)}ms**")
+async def mute(ctx, member: discord.Member, time: str, *, reason="No"):
+    seconds = int(time[:-1]) * {'s':1,'m':60,'h':3600,'d':86400}[time[-1].lower()]
+    await member.timeout(datetime.timedelta(seconds=seconds), reason=reason)
+    await ctx.send(f"{EMOJIS['success']} Muted {member.name} for {time}")
 
 # --- GAME ---
-@bot.command()
-async def start_egame(ctx):
-    data = load_data()
-    if str(ctx.guild.id) in data["guilds"]: return await ctx.send("Already active!")
-    data["guilds"][str(ctx.guild.id)] = True
-    for m in ctx.guild.members:
-        if not m.bot: data["users"][str(m.id)] = data["users"].get(str(m.id), 0) + 500
-    save_data(data); await ctx.send(f"{EMOJIS['success']} Game On! +500 points to all!")
-
 @bot.command()
 async def daily(ctx):
     data = load_data(); uid = str(ctx.author.id)
     data["users"][uid] = data["users"].get(uid, 0) + 1000
     save_data(data); await ctx.send(f"Claimed **1,000** daily points!")
-
-@bot.command()
-async def weekly(ctx):
-    data = load_data(); uid = str(ctx.author.id)
-    data["users"][uid] = data["users"].get(uid, 0) + 10000
-    save_data(data); await ctx.send(f"Claimed **10,000** weekly points!")
 
 @bot.command(aliases=['lb'])
 async def leaderboard(ctx):
@@ -148,73 +104,22 @@ async def leaderboard(ctx):
     for i, (u, b) in enumerate(lb[:5], 1):
         rank = "🥇" if i==1 else "🥈" if i==2 else "🥉" if i==3 else f"#{i}"
         msg += f"{rank} <@{u}>: **{b} points**\n"
-    await ctx.send(msg, view=LeaderboardView(lb), silent=True)
+    await ctx.send(msg, silent=True)
 
-@bot.command()
-async def cf(ctx, amt: int):
-    data = load_data(); uid = str(ctx.author.id)
-    if amt > data["users"].get(uid, 0): return await ctx.send("Too poor!")
-    if random.choice([True, False]): data["users"][uid] += amt; r = f"won {amt}!"
-    else: data["users"][uid] -= amt; r = f"lost {amt}."
-    save_data(data); await ctx.send(f"🪙 Coinflip: You {r}")
-
-@bot.command()
-async def pray(ctx):
-    data = load_data(); uid = str(ctx.author.id)
-    amt = random.randint(10, 100)
-    data["users"][uid] = data["users"].get(uid, 0) + amt
-    save_data(data); await ctx.send(f"🙏 Prayed and got **{amt}**!")
-
-@bot.command()
-async def rob(ctx, m: discord.Member):
-    data = load_data(); uid, tid = str(ctx.author.id), str(m.id)
-    if data["users"].get(tid, 0) < 100: return await ctx.send("Too poor to rob!")
-    if random.randint(1, 10) > 7:
-        amt = random.randint(1, 100)
-        data["users"][uid] += amt; data["users"][tid] -= amt
-        save_data(data); await ctx.send(f"💰 Stole **{amt}** from {m.name}!")
-    else: await ctx.send("Failed!")
-
-# --- ANIME FUN ---
-# Removed 'kick' and 'punch' from this list to avoid duplicates
-FUN_LIST = ['slap', 'kill', 'tickle', 'hug', 'cuddle', 'nod', 'fuck', 'beat', 'sex', 'kiss', 'wave', 'hi', 'bye', 'welcome', 'thank', 'thanks', 'pat', 'poke', 'boop', 'highfive', 'handshake', 'holdhands', 'snuggle', 'nuzzle', 'comfort', 'bonk', 'yeet', 'throw', 'bite', 'lick', 'spank', 'roast', 'explode', 'prank', 'confuse', 'tease', 'bully', 'scare', 'trap', 'shoot', 'smack', 'blush', 'cry', 'laugh', 'dance', 'sing', 'sleep', 'wake', 'facepalm', 'think', 'stare', 'smile', 'happy', 'sad', 'angry', 'excited', 'clap']
-
-async def anime_gif(ctx, action, member: discord.Member = None):
-    async with aiohttp.ClientSession() as s:
-        async with s.get(f"https://api.otakugifs.xyz/gif?reaction={action}") as r:
-            url = (await r.json())['url']
-    msg = f"{ctx.author.mention} {action}s {member.mention}!" if member else f"{ctx.author.mention} is {action}ing!"
-    await ctx.send(f"{msg}\n{url}")
-
-for f in FUN_LIST:
-    if not bot.get_command(f):
-        @bot.command(name=f)
-        async def _f(ctx, m: discord.Member = None, name=f): await anime_gif(ctx, name, m)
-
-# --- DEV ONLY ---
+# --- DEV TOOLS ---
 @bot.command(name="add_money", hidden=True)
 async def add_money(ctx, m: discord.Member, amt: int):
-    if ctx.author.id != DEV_ID: return
-    data = load_data(); data["users"][str(m.id)] = data["users"].get(str(m.id), 0) + amt
-    save_data(data); await ctx.send(f"Added {amt} to {m.name}.")
+    if ctx.author.id == DEV_ID:
+        data = load_data(); data["users"][str(m.id)] = data["users"].get(str(m.id), 0) + amt
+        save_data(data); await ctx.send(f"Added {amt}!")
 
-# --- HELP ---
-class HelpView(discord.ui.View):
-    @discord.ui.button(label="Mod", style=discord.ButtonStyle.danger)
-    async def m(self, i, b): await i.response.send_message("🛠 `ban`, `kick`, `mute`, `unmute`, `role`, `dm`", ephemeral=True)
-    @discord.ui.button(label="Game", style=discord.ButtonStyle.success)
-    async def g(self, i, b): await i.response.send_message("🎮 `daily`, `weekly`, `lb`, `cf`, `rob`, `pray`, `start_egame`", ephemeral=True)
-    @discord.ui.button(label="Fun", style=discord.ButtonStyle.primary)
-    async def f(self, i, b): await i.response.send_message(f"✨ {', '.join(FUN_LIST[:10])}...", ephemeral=True)
-
-@bot.command()
-async def help(ctx): await ctx.send(f"{EMOJIS['help']} **Miku Help Menu**", view=HelpView())
-
-# --- WEB ---
-app = Flask('')
-@app.route('/')
-def home_route(): return "Miku V6 Online!", 200
+# --- STARTUP HOOK ---
+@bot.event
+async def on_ready():
+    if not daily_reminder.is_running():
+        daily_reminder.start()
+    print(f"Miku is logged in as {bot.user}")
 
 if __name__ == "__main__":
-    Thread(target=lambda: app.run(host='0.0.0.0', port=os.getenv("PORT", 8080)), daemon=True).start()
-    daily_reminder.start(); bot.run(os.getenv('TOKEN'))
+    Thread(target=run_web, daemon=True).start()
+    bot.run(os.getenv('TOKEN'))
